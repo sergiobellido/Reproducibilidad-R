@@ -1,0 +1,438 @@
+---
+title: 'Open PhenoLiDAR: An Open-Source LiDAR Phenotyping Platform'
+author:
+  - name: Jose A. Jimenez-Berni
+    affil: 1,*
+    orcid: 0000-0001-6542-921X
+  - name: Sergio Bellido Jimenez
+    affil: 1
+  - name: Rafael Orozco Moran
+    affil: 2
+  - name: Jose M. Alvarez
+    affil: 3
+affiliation:
+  - num: 1
+    address: |
+      Institute for Sustainable Agriculture - IAS-CSIC,
+      Spanish National Research Council,
+      Alameda del Obispo S/N, 14004 Cordoba, Spain
+    email: berni@ias.csic.es, sbellido@ias.csic.es
+  - num: 2
+    address: |
+      ETSIAM,
+      University of Cordoba,
+      Campus Universitario Rabanales, Cordoba, Spain
+    email: rafozco@gmail.com
+  - num: 3
+    address: |
+      NVIDIA,
+      USA
+    email: jalvarez.research@gmail.com
+correspondence: |
+  berni@ias.csic.es; Tel.: +34-957499175.
+journal: remotesensing
+type: article
+status: submit
+bibliography: mybibfile.bib
+appendix: appendix.tex
+simplesummary: |
+  A Simple summary goes here.
+abstract: |
+  LiDAR for field phenotyping allows accurate retrieval of crop traits related  to canopy architecture, biomass or ground cover. The integration of LiDAR in Phenomobiles is quite common as they provide a stable platform that can move at a constant speed. However, data acquisition software, georeferencing and processing pipelines are mainly based on custom software, limiting interoperability and reproducibility between research groups. "Open PhenoLiDAR", an open-source pipeline for integrating LiDAR sensors in plant phenotyping and, more broadly, for crop monitoring applications. Open PhenoLiDAR spans from data acquisition (including instructions for integrating the LIDAR and GNSS receiver) to data analysis and obtaining primary plant traits. The data acquisition and sensor integration are developed using ROS (Robotic Operating System), which provides modularity for adopting different LiDAR models and GNSS/IMU receivers. ROS also enables compatibility for integrating other sensors, such as machine vision or hyperspectral cameras. ROS also presents advantages for further adoption of robotic solutions or autonomous navigation. Field validation using tree crops, RMSE 20cm. 
+keywords: |
+  LiDAR; Phenomics; Open source; Data pipeline; Agriculture
+acknowledgement: |
+  All sources of funding of the study should be disclosed. Please clearly 
+  indicate grants that you have received in support of your research work. 
+  Clearly state if you received funds for covering the costs to publish in open 
+  access.
+authorcontributions: |
+  J.A.J.B conceived and designed the instrument; J.A.J.B and S.B.J. developed software;
+  J.A.J.B., R.O.M. and S.B.J. designed the experiments, performed the measurements and analyzed
+  the data; J.A.J.B. wrote the manuscript with inputs from S.B.J., R.O.M. and and J.A.
+conflictsofinterest: |
+  The authors declare no conflict of interest.
+sampleavailability: |
+  Datasets are available from the authors upon request.
+abbreviations:
+  - short: LiDAR
+    long: Light Detection And Ranging
+  - short: ROS
+    long: Robotic Operating System
+  - short: TLS
+    long: Terrestrial LiDAR System
+  - short: RMSE 
+    long: Root Mean Square Error
+#output: rarticles::mdpi_articles
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+# Required libraries
+# reticulate, rticles, tinytex
+# After installing tinytex, it is necessary to install the actual tinytex: tinytex::install_tinytex()
+# A conda environment is created called "opl38", these versions are required for the script to run 
+# conda create -n opl38 python=3.8 numpy=1.21.0 pandas matplotlib seaborn scipy openpyxl scikit-learn mamba -c conda-forge
+
+# Note: You need to setup the environment on Rstudio after creating conda environment (Tools-->Global options -->Python-->Python interpreter select: opl38)
+Sys.setlocale('LC_ALL','C')
+options(OutDec= ".")
+library(reticulate)
+library(tinytex)
+options(tinytex.verbose = TRUE)
+use_condaenv("opl38", required = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{python data_load, echo=FALSE}
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from scipy import stats
+def RMSE(df, p, x):
+    return ((df[p] - df[x]) ** 2).mean() ** .5
+    
+def lregress(df, p, x):
+    subset = df.dropna(subset=[p,x])
+    slope, intercept, r_value, p_value, std_err = stats.linregress(subset[x], subset[p])
+    return(slope, intercept, r_value*r_value, p_value, std_err)
+def validation_plot(x, y, data, title=None, x_label=None, y_label=None, alpha=.5, c=None, cmap='tab20c', ax=None):
+    slope, intercept, r2, p_value, std_err = lregress(data, y, x)
+    rmse = RMSE(data, y, x)
+    if ax is None:
+        fig, ax = plt.subplots(1, 1)
+    if c is None:
+        data.plot.scatter(x=x, y=y, marker='.', alpha=alpha, ax=ax)
+    else:
+        data.plot.scatter(x=x, y=y, marker='.', alpha=alpha, c=c, cmap=cmap, ax=ax)
+    min_val = min(data[x].min(), data[y].min())
+    max_val = max(data[x].max(), data[y].max())
+    ax.plot([min_val,max_val], [min_val,max_val], c='black')
+    ax.set_xlim(min_val, max_val)
+    ax.set_ylim(min_val, max_val)
+    val_text = "$r^2$: {r2:.2f}, slope: {slope:.2f}, intercept: {intercept:.2f}, RMSE: {rmse:.2f}".format(r2=r2, slope=slope, intercept=intercept, rmse=rmse)
+    if title is None:
+        ax.set_title("{x} vs {y}\n{val}".format(x=x, y=y, val=val_text))
+    else:
+        ax.set_title(title)
+    if x_label is not None:
+        ax.set_xlabel(x_label)
+    if y_label is not None:
+        ax.set_ylabel(y_label)
+        
+df_Field = pd.read_excel("data/Field_ValidationData.xlsx", sheet_name="Field")
+df_cc = pd.read_excel("data/Field_ValidationData.xlsx", sheet_name="LiDAR")
+df_full = df_Field.join(df_cc, rsuffix='_CC')
+
+# Alturas
+df_alturas = df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho','HT'], value_name='Field')
+df_alturas = df_alturas.join(df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho_CC','HT_CC'], value_name='LiDAR')[['LiDAR']])
+df_altura_tot = df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['HT'], value_name='Field')
+df_altura_tot = df_altura_tot.join(df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['HT_CC'], value_name='LiDAR')[['LiDAR']])
+df_altura_o = df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho'], value_name='Field')
+df_altura_o = df_altura_o.join(df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho_CC'], value_name='LiDAR')[['LiDAR']])
+# Secciones
+df_secciones = df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['a1', 'a2', 'a3'], value_name='Field')
+df_secciones = df_secciones.join(df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['a1_CC', 'a2_CC', 'a3_CC'], value_name='LiDAR')[['LiDAR']])
+# Total de puntos medidos
+df_tot = df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho','HT','a1','a2','a3'],value_name='Field')
+df_tot = df_tot.join(df_full.melt(id_vars=['Section', 'Block', 'Row', 'Tree'], value_vars=['Ho_CC','HT_CC','a1_CC','a2_CC','a3_CC'],value_name='LiDAR')[['LiDAR']])
+```
+
+# Introduction
+
+Phenotyping bottleneck \cite{Furbank2011-ue,Araus2014-dx}.
+New tools for complex traits that are time consuming \cite{Furbank2019-oc,Yang2020-io,Zhao2019-sv,Yang2017-zn,Fahlgren2015-oj,Pieruschka2019-nd,Hein2021-do,Tardieu2017-sc,Mir2019-fr}.
+Both, in the field and under controlled-environment.
+
+Need for open source and reproducible science \cite{Cwiek-Kupczynska2016-pq,Neveu2019-vo,Papoutsoglou2020-qm,Lobet2017-wg}.
+Example of PlantCV \cite{Fahlgren2015-yp,Gehan2017-ah}.
+
+From phenomics to precision agriculture \cite{Chawade2019-eu,Bauer2019-cn,Roitsch2019-ln}.
+
+LiDAR as a tool of choice in field phenomics \cite{Deery2014-hy,Jimenez-Berni2018-fm,Walter2019-tg,Liu2017-ab,Madec2017-fu,Lin2015-pe}.
+
+Robotics and phenomics \cite{Underwood2017-gx,Underwood2016-cn,Jagbrant2015-po,Westling2018-ke,Underwood2015-kc}.
+
+Applications in tree orchards \cite{Escola2017-hl,Rosell2009-kq,Wu2020-xj,Wu2019-cx,Fernandez-Sarria2019-qy}, light interception \cite{Westling2018-ke,Westling2020-or}.
+.
+
+Management applications for pruning \cite{Westling2021-qy}, spray application \cite{Gu2021-pq,Mahmud2021-ks,Miranda-Fuentes2015-cr}
+
+The current version supports the LMS400 (Sick, Germany) LiDAR. This LiDAR which is commonly used in Phenomobiles and ground platforms, provides high scan frequencies and angular resolution, yielding millimeter range accuracy.
+With a red laser, it provides good discrimination between green vegetation and soil or senescence.
+Open PhenoLiDAR also offers a low-cost alternative to higher grade commercial IMUS to obtain the orientation and georeferencing.
+Specifically, Open PhenoLiDAR combines a PX4, a popular open-source autopilot, providing attitude and orientation, with a dual antenna RTK GNSS model RTKLITE (North Surveying, Spain).
+The user interface is web-based, thus accessible with any web browser locally or over the internet.
+It is developed using Plotly-Dash and Python.
+It consists of a dashboard for visualizing key metrics from ROS and a base map with the current trajectory.
+It also offers simple project management for creating new projects and setting up the data capture.\
+The point cloud data from the LiDAR is generated in real-time through ROS and stored locally using HDF5 as the standard data format.
+Other options for data storage include Bag files, the standard ROS data format, which can provide further opportunities for post-processing and debug.
+Open PhenoLiDAR also includes basic python analysis templates for performing point cloud filtering, which is essential in the LMS400 LiDAR. Since this model is designed for indoor application, it is affected by direct sunlight, creating stray points that need to be filtered out before data analysis.
+We show examples of different algorithms for point cloud filtering, based on intensity, statistical outlier removal and combination of both.
+The templates also allow data analysis and visualization using Jupyter Notebooks.
+To assist with deploying the Open PhenoLiDAR under different hardware configurations and preventing incompatibility with other software libraries or ROS versions, Open PhenoLiDAR can run as a virtual container using Docker.
+The development of an open-source implementation for capturing and analyzing LiDAR data in field phenomics applications can facilitate the adoption of this technology by other groups and companies wanting to apply phenomic tools in their operations or research.
+The use of ROS as the base for data acquisition offers compatibility with several devices that ROS already supports, accelerating development times and allowing further integration with real-time analysis and control (e.g. robotics).
+We invite the plant phenotyping and remote sensing communities to join this initiative, contribute to the project and promote open source and reproducible data acquisition and analysis pipelines.
+The source code and documentation is available in this public git repository: <https://github.com/OpenAgriTech/Open-PhenoLiDAR> \cite{Berni2021-un}.
+
+# Materials and Methods
+
+## System Description and Components
+
+The OpenPhenoLiDAR is a modular portable electric wheelbarrow (Makita-BL18VLXT) with three wheels that integrates a lightweight aluminum structure in which the different components have been installed, and an additional iron structure to be attached to the three-point tractor.
+The front wheel is driven by a manual controlled electric motor which integrates an encoder and the two rear wheels act as steering wheels.
+The structure is made up of an aluminum mast placed in the center of the wheelbarrow with two perpendicularly adjustable arms, to which the different components will be attached.
+The two arms are height adjustable to facilitate data acquisition of different sizes canopies.
+
+The OpenPhenoLiDAR comprises the following instrumentation:
+
+1.  The current version supports a high-frequency laser scanner or LiDAR (LMS 400, SICK Germany) which works on the phase-shift principle for estimating the distance.
+    The laser operates at 650nm (visible red light), with 3 meters range, scanning rate between 300-500Hz and horizontal aperture angle of 70º.
+
+2.  A DIY Navigation System, which combines a Inertial Measurement Unit (IMU) and a RTK GNSS module to obtain the orientation and georeferencing as an alternative to higher grade commercial Navigation systems.
+    Specifically, OpenPhenoLIDAR combines a Pixhawk Cube 2 (PX4), a popular open-source autopilot, providing attitude and orientation, with a dual antenna RTK GNSS model RTKLITE (North Surveying, Spain).
+
+3.  A Commercial IMU immune to magnetic distortions (SBG Ellipse-D) which integrates a dual antenna and multiband GNSS receiver delivering precise heading (0.2º), 1 cm RTK GNSS position accuracy and 0.05º Roll and Pitch (RTK).
+    This additional device was used to calibrate and compare the accuracy of our DIY navigation system.
+
+4.  As a processing system, nano-Jetson NVIDIA TX2 is the phenomobile brain, providing a high and necessary computing power of the system.
+    ARM A57, 4 [cores\@1.43GHz](mailto:cores@1.43GHz){.email} CPU and NVIDIA Maxwell 128 cores GPU.
+
+5.  Computer with touch screen (Toughpad - Panasonic)
+
+The systems components are in figure \ref{fig:components}.
+(**HAY QUE HACER UNA FOTO DEL CARRITO ACTUALIZADA Y ENUMERAR LOS COMPONENTES.**)
+
+## Data acquisition
+
+The Open PhenoLiDAR operating software is developed using ROS (Robotic Operating System), it provides modularity for adopting different LiDAR models and GNSS/IMU receivers.
+ROS also enables compatibility for integrating other sensors, such as machine vision or hyperspectral cameras.
+LiDAR (LMS400) and IMU(ellipse-D SBG) communicates to ROS through a specific configuration driver, and PX4-autopilot communicates through MAVROS (ROS package) and enables MAVLink (lightweight messaging protocol for communication with drones and between onboard drone components) extendable communication between computers running ROS for any MAVLink enabled autopilot, ground station or peripheral.
+
+```{r components, fig.cap="Schematic of the implementation of Open PhenoLiDAR.", echo=FALSE, fig.show="hold", out.width="90%"}
+knitr::include_graphics("./images/DataAdquisitionProcess.pdf")
+```
+
+The operating system is constantly receiving data from the sensors distributed on the phenomobile:
+
+-   GNSS RTKITE: coordinates (x, y, z), altitude, longitude and latitude
+-   PX4 Autopilot IMU: orientation (x,y,z,w), velocity and specific forces
+-   Ellipse-D SBG IMU: provides position, velocity and heading from internal SBG-GPS, orientation and navigation from internal IMU.
+
+The way the communication is established with ROS through different protocol is:
+
+-   GNSS RTKITE: uses NMEA (National Marine Electronics Association) protocol to share data with PX4 autopilot. NMEA messages start with the \$ character, and each data field is separated by a comma*.* This protocol was adapted ourselves to PX4 cube software. It also required RTK fixes for having an accuracy output. In this case, we are using receiving RTK fixes from a virtual reference station (VRS) located in Cordoba, Spain, using Networked Transport of RTCM via Internet Protocol (Ntrip). Ntrip is designed to disseminate differential correction data or other kinds of GNSS streaming data to stationary or mobile users over the Internet, allowing simultaneous PC, Laptop, PDA, or receiver connections to a broadcasting host. It supports wireless Internet access through Mobile IP Networks like GSM, GPRS, EDGE, or UMTS.
+
+<!-- -->
+
+-   PX4 cube 2: uses MAVROS (ROS package) and enables MAVLink (lightweight messaging protocol for communication with drones and between onboard drone components) extendable communication between computers running ROS for any MAVLink enabled autopilot, ground station or peripheral.
+
+-   Ellipse-D SBG: uses an specific ROS Driver ([SBG ROS Driver](https://github.com/SBG-Systems/sbg_ros_driver))
+
+-   LiDAR LMS400: uses an specific ROS Driver ([LMS400 ROS Driver](https://github.com/OpenAgriTech/asr_sick_lms_4){.uri})
+
+ROS is an open source meta-operating system, consists of code and tools that help the project code run and do the required job.
+It is designed to be a loosely coupled system where a process is called a node and every node should be responsible for one task.
+Nodes communicate with each other using messages passing via logical channels called topics.
+Each node can send or get data from the other node using the publish/subscribe model.
+In general, ROS is a framework using the concept of an OS.
+
+```{r rosworkflow, fig.cap="ROS schematic workflow.", echo=FALSE, fig.show="hold", out.width="90%"}
+knitr::include_graphics("./images/ROS_WORKFLOW.pdf")
+```
+
+ROS offers tools like RVIZ to visualize the point cloud data in real time, but in this case, we have developed a web application with visualization and process management functionality.
+The user interface is web-based, thus accessible with any web browser locally or over the internet.
+It is developed using Plotly-Dash and Python.
+It consists of a dashboard for visualizing key metrics from ROS (velocity, number of satellites, GPS status, horizontal and vertical position accuracy) and a base map with the current trajectory.
+It also offers simple project management for creating new projects and setting up the data capture.
+
+Given the complexity of the reproducibility of this system on different prototypes due to library updates, specific operating system requirements and ROS software versions, we decided to design the entire system in Docker.
+Docker is an open platform for developing, shipping, and running applications and also provides the ability to package and run an application in a loosely isolated environment called a container.
+
+## Data processing
+
+Once ROS receive the data from the sensors the point cloud data from the LiDAR is generated in real-time through ROS and stored locally using HDF5 as the standard data format.
+There is another possibility for data storage that include Bag files (ROS standard format) but it is a non recommended processing data alternative due to high computing with heavy files.
+
+The HDF5 file format has been designed to store and hierarchically organize large datasets that provides an easy access to data.
+HDF5 simplifies the file structure to include two main types of objects: groups and dataset.
+Datasets are homogeneous multidimensional arrays and groups are structures that contain datasets.
+Moreover, the HDF5 format allows embedding metadata , something that makes it self-describing.
+All elements are able to contain associated metadata that describes the information contained in the elements.
+
+The Open PhenoLiDAR uses a HDF5 file structure with the following datasets including information from ROS sensors topics:
+
+-   `/odom` with the odometry from MAVROS (PX4-autopilot).
+
+-   `/points` the actual point cloud in odometry coordinates.
+
+-   `/scans` the raw LiDAR scans.
+
+The data processing was developed in Python programming language.
+Libraries as [PyTables](https://www.pytables.org/), [Pandas](https://pandas.pydata.org/), [PyntCloud](https://pyntcloud.readthedocs.io/en/latest/) and [pythreejs](https://github.com/jupyter-widgets/pythreejs) are requirements for the analyzing technique.
+These steps need to be follow:
+
+1.  Load the HDF5 file using PyTables.
+
+2.  Display the Point Cloud: To display the data, we create a pandas dataframe before loading into PyntCloud.
+    The structure of the dataframe is quite simple, with the x,y,z coordinates, intensities and scan index (0-699 in the LMS400 LiDAR model).
+    We can check the intensity histograms that helps on point cloud discrimination (i.e. solar radiation).
+
+<!-- -->
+
+3.  PyntCloud object for display and interactive exploration (filtering, voxels, etc.).
+
+4.  Cloud filtering and Statistical Outlier Removal.
+    The intensity is based on the object reflectance reached by laser pulse.
+    The radiometric intensity resolution is usually expressed by the number of bits required to store each pixel.
+    The LMS400 uses 8 bits of resolution (256 levels).
+    The physical sense is the proportionality with the reflectance of the object.
+    Based on the low level of intensity of the solar radiation points that cause noising data, a high intensity pass filter can be generating.
+    We can use pandas and load it back as a PyntCloud object.
+    Besides the intensity filter, it is necessary to remove existing outliers.
+    The Statistical Outlier Removal filter algorithm creates a KD tree of unclassified laser points and finds the number of points around each laser point in a given query radius.
+    If the number is less than a given point number threshold after increasing the length of the search radius several times, the point is treated as an isolated point, a class of low point (stray point).
+    It can be applied very easily with PyntCloud.
+
+The data stored in HDF5 file contains relevant information about the process, as an example, from odometry dataframe we can mapping the trajectory followed by the prototype in the crop.
+Although for a precise or debugging analysis, it is highly recommended to use bag files that include more parameters of interest.
+Dealing with HDF5 files, it is also possible to show the scans as a raster image to observe variations of the whole plot.
+
+<!-- -->
+
+    (AÑADIR IMAGEN DE HISTOGRAMA DE INTENSIDADES, PLOT DE LA TRAYECTORIA Y DOS IMAGENES (FILTRADAS Y SIN FILTRAR)!!!)
+
+## Field Validation Experiments
+
+The study site is a variable density field located in southern Spain, at the Research Centre of IFAPA - Alameda del Obispo, 132, Córdoba Spain (37º52'N, 4º49W), consisting on a 1,7-ha olive orchard (*Olea europaea* L cv. 'Arbequina') planted with three different frames (7x3,42 m; 6x2,5 m; 4x1,5 m) randomly distributed in nine elementary plots with three repetitions per treatment: \*\*\****Choose table or list***\*\*\*:
+
+|                        | Abbreviation | Frame (m) | Trees/Ha |
+|:----------------------:|:------------:|:---------:|:--------:|
+|     **Intensive**      |      IN      | 7 x 3,42  |   417    |
+|    **High density**    |      HD      |  6 x 2,5  |   833    |
+| **Super-High density** |     SHD      |  4 x 1,5  |  1.666   |
+
+-   Intensive treatment (IN): 7 x 3,42m (417 trees/Ha)
+
+-   High density treatment (HD): 6 x 2,5m (833 trees/Ha)
+
+-   Super-High density treatment (SHD): 4 x 1,5m (1.666 trees/Ha)
+
+```{r aerialview, fig.cap="Aerial view of the orchard and its plantation framework treatments.", echo=FALSE, fig.show='hold', out.width="90%"}
+knitr::include_graphics("./images/MapaEnsayo.pdf")
+```
+
+All treatments have a localized irrigation system, using drippers 2.2 l / h self-compensating, separated 1-m on the drip line and using a branch per line.
+Irrigation is adjusted to each of the density treatments to apply the water each needs, so the olive trees do not suffer stress hydric, providing amounts of irrigation water even higher than the average evapotranspiration.
+
+In order to calibrate and validate the LiDAR measurements, it has been selected several trees in each of the density treatments of the experimental plot.
+These measures were adapted to each type of plantation, according to the density and overlap of the olive trees.
+
+In the intensive treatment (IN; 7x3,42 m), 6 trees were selected from the two central rows of each repetition.
+In the high-density treatment (HD; 6 x 2,5m), the measurements were also taken of 6 trees in each of the central rows of each elementary plot.The measures were taken in the central part of the rows in order to avoid the outermost parts of the plot.
+In the hedge treatment (SHD; 4 x 1,5m), the measures were also taken in the two middle rows of each elementary plot.in this case, because of having a continuous hedge, some sticks, with yellow labels, were placed right by the trees foot in order to find later the measure point in the LiDAR point cloud.
+
+Due to the small size and homogeneity of the intensive trees canopy (one foot),each tree was treates as an ellipsoid to calculate the crown volumes.
+4 measurements were taken per tree (Figure *xx*) using a calibrated bar: height at the withers (Ho), total height (Ht) and length of the two horizontal semi-axes (Ec and Eb).
+The vertical semi-axis (Ea) was calculated as: Ea = (Ht-Ho)/2.
+The measures selected to estimate the canopy architecture of the HD and SHD treatments are based on extracting sections along the edge by the trees selected before.
+In this case, in addition to Ho and HT and height of the canopy (ΔH), three measurements were taken of the canopy width of each tree (perpendicular to the direction of the row) on the axis of the tree (trunk): the first The measurement was taken at a height of 1 m, the second at 1.5 m, and the third at 2 m from the ground (a1, a2, a3); (Figure *xx*).
+
+```{r treemeasures, fig.cap="Description of the measures taken for the IN(1), HD and SHD (2) treatment.", echo=FALSE, fig.show='hold', out.width="90%"}
+knitr::include_graphics("./images/medidas_arboles.pdf")
+```
+
+Although the trees are taller than 2 m, it was decided to take the highest measurement of the "edge with" at 2 m high, because at higher heights the manual measurement becomes complicated because of the scattering of branches in the highest part of the tree, making it difficult to estimate a visual decision to determine the canopy limits and leads to major errors in this measure.
+Furthermore, the most important thing for the LiDAR calibration equipment, is to obtain manual measurements with the higher accuracy, to obtain the vegetation structure differences along the "length of the hedge" and comparing with LiDAR values.
+That is the reason why the manual measurements are simple (height, width, depth) in order to avoid errors in their estimation.
+
+In order to validate the tree measurements in the field, the data collected by the openphenolidar were analyzed in a famous point cloud editing software: CloudCompare.
+The software enables to perform virtually the same averages as those taken in the field and in the same way.To do this, we extracted the same sections (HD and SHD) that were measured in the field, thanks to a tool in the program capable of isolating them for better measurement.
+The fact of installing yellow stakes right at the foot of the trees whose sections were measured, facilitated the task of finding the sections later through the software.
+This is because the yellow color of the stakes stands out when the point cloud is displayed in the program as a function of the laser beam return intensity.
+In order to make a comparison and validate the tree measurements in the field, the data collected by the openphenolidar were analyzed in a famous point cloud editing software: CloudCompare.
+The software enables to perform virtually the same averages as those taken in the field and in the same way.To do this, we extracted the same sections (HD and SHD) that were measured in the field, thanks to a tool in the program capable of isolating them for better measurement.
+The fact of installing yellow stakes right at the foot of the trees whose sections were measured, facilitated the task of finding the sections later through the software.
+This is because the yellow color of the stakes stands out when the point cloud is displayed in the program as a function of the laser beam return intensity.
+
+# Results
+
+## Orientation accuracy
+
+## Tree metrics
+
+```{python validation, fig.cap="Validation plots", echo=FALSE, fig.show = "hold", message=FALSE, results="hide"}
+fig, axarr = plt.subplots(2,2, figsize=(8,8))
+validation_plot('HT', 'HT_CC', df_full, ax=axarr[0][0], alpha=1, c='Block')
+validation_plot('a1', 'a1_CC', df_full, ax=axarr[0][1], alpha=1, c='Block')
+validation_plot('a2', 'a2_CC', df_full, ax=axarr[1][0], alpha=1, c='Block')
+validation_plot('a3', 'a3_CC', df_full, ax=axarr[1][1], alpha=1, c='Block')
+_ = plt.tight_layout()
+_ = plt.show()
+```
+
+Subsection text here.
+
+### Subsubsection Heading Here
+
+Bulleted lists look like this:
+
+-   First bullet
+-   Second bullet
+-   Third bullet
+
+Numbered lists can be added as follows:
+
+1.  First item
+2.  Second item
+3.  Third item \# Discussion
+
+Authors should discuss the results and how they can be interpreted in perspective of previous studies and of the working hypotheses.
+The findings and their implications should be discussed in the broadest context possible.
+Future research directions may also be highlighted.
+
+# Conclusion
+
+This section is not mandatory, but can be added to the manuscript if the discussion is unusually long or complex.
+
+The text continues here.
+
+All figures and tables should be cited in the main text as Figure 1, Table 1, etc.
+
+```{=tex}
+\begin{figure}[H]
+\centering
+\includegraphics[width=3 cm]{logo-mdpi}
+\caption{This is a figure, Schemes follow the same formatting. If there are multiple panels, they should be listed as: (\textbf{a}) Description of what is contained in the first panel. (\textbf{b}) Description of what is contained in the second panel. Figures should be placed in the main text near to the first time they are cited. A caption on a single line should be centered.}
+\end{figure}
+```
+```{=tex}
+\begin{table}[H]
+\caption{This is a table caption. Tables should be placed in the main text near to the first time they are cited.}
+\centering
+%% \tablesize{} %% You can specify the fontsize here, e.g.  \tablesize{\footnotesize}. If commented out \small will be used.
+\begin{tabular}{ccc}
+\toprule
+\textbf{Title 1}    & \textbf{Title 2}  & \textbf{Title 3}\\
+\midrule
+entry 1     & data          & data\\
+entry 2     & data          & data\\
+\bottomrule
+\end{tabular}
+\end{table}
+```
+This is an example of an equation:
+
+```{=tex}
+\begin{equation}
+\mathbb{S}
+\end{equation}
+```
